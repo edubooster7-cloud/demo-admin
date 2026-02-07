@@ -1,6 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
+import api from "@/app/api/axios";
+import { toast } from "sonner";
+import { isSameMonth, isToday, parseISO, formatDistanceToNow } from "date-fns";
+import { fr } from "date-fns/locale";
+
+// UI Components
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -35,11 +41,121 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, Trash2, Edit, Plus, LayoutGrid } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
-import { fr } from "date-fns/locale";
-import { Section, useSections } from "@/hooks/user-section";
+
+// External Hooks
 import { useProvinces } from "@/hooks/use-province";
 
+// --- Types ---
+export interface Section {
+  _id: string;
+  name: string;
+  provinces: any[];
+  addedby?: any;
+  courses?: any[];
+  createdAt?: string;
+}
+
+// --- Internal Hook: useSections ---
+// Logic moved here to avoid "conflict with local declaration" errors
+export function useSections() {
+  const [sections, setSections] = useState<Section[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchSections = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const response = await api.get("/section");
+      if (response.data.success) {
+        setSections(response.data.sections);
+      }
+    } catch (err: any) {
+      const message =
+        err.response?.data?.message || "Erreur de récupération des sections";
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSections();
+  }, [fetchSections]);
+
+  const addSection = async (data: { name: string; provinces: string[] }) => {
+    try {
+      const response = await api.post("/section/province/", data);
+      if (response.data.success) {
+        setSections((prev) => [...prev, response.data.section]);
+        toast.success("Section créée avec succès");
+        return response.data.section;
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Erreur lors de la création");
+      throw err;
+    }
+  };
+
+  const updateSection = async (
+    id: string,
+    data: { name?: string; provinces?: string[] },
+  ) => {
+    try {
+      const response = await api.patch(`/section/${id}`, data);
+      if (response.data.success) {
+        setSections((prev) =>
+          prev.map((s) => (s._id === id ? response.data.section : s)),
+        );
+        toast.success("Section mise à jour");
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Erreur de mise à jour");
+    }
+  };
+
+  const removeSection = async (id: string) => {
+    try {
+      const response = await api.delete(`/section/${id}`);
+      if (response.data.success) {
+        setSections((prev) => prev.filter((s) => s._id !== id));
+        toast.success("Section supprimée");
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Erreur de suppression");
+    }
+  };
+
+  const stats = useMemo(() => {
+    const now = new Date();
+    const itemsWithDates = sections.map((s) => ({
+      ...s,
+      dateObj: s.createdAt ? parseISO(s.createdAt) : null,
+    }));
+
+    return {
+      total: sections.length,
+      todayCount: itemsWithDates.filter((s) => s.dateObj && isToday(s.dateObj))
+        .length,
+      monthCount: itemsWithDates.filter(
+        (s) => s.dateObj && isSameMonth(s.dateObj, now),
+      ).length,
+    };
+  }, [sections]);
+
+  return {
+    sections,
+    isLoading,
+    error,
+    stats,
+    refresh: fetchSections,
+    addSection,
+    updateSection,
+    removeSection,
+  };
+}
+
+// --- Main Component: SectionsTable ---
 export function SectionsTable() {
   const {
     sections,
@@ -70,7 +186,6 @@ export function SectionsTable() {
 
   return (
     <div className="space-y-6">
-      {/* Statistiques */}
       <div className="grid gap-4 md:grid-cols-3">
         <div className="rounded-lg border bg-card p-4 shadow-sm">
           <p className="text-sm font-medium text-muted-foreground">
@@ -92,7 +207,6 @@ export function SectionsTable() {
         </div>
       </div>
 
-      {/* Header avec bouton d'ajout */}
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-semibold flex items-center gap-2">
           <LayoutGrid className="size-5" /> Liste des Sections
@@ -100,7 +214,6 @@ export function SectionsTable() {
         <SectionFormDialog onSubmit={addSection} />
       </div>
 
-      {/* Tableau */}
       <div className="rounded-lg border bg-card shadow-sm">
         <Table>
           <TableHeader>
@@ -175,7 +288,7 @@ export function SectionsTable() {
   );
 }
 
-// --- Formulaire d'Ajout/Edition ---
+// --- Form Component: SectionFormDialog ---
 function SectionFormDialog({
   section,
   onSubmit,
@@ -183,13 +296,25 @@ function SectionFormDialog({
   section?: Section;
   onSubmit: (data: any) => Promise<void>;
 }) {
-  const { provinces } = useProvinces(); // On récupère les provinces pour la sélection
+  const { provinces } = useProvinces();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState(section?.name || "");
   const [selectedProvinces, setSelectedProvinces] = useState<string[]>(
     section?.provinces?.map((p: any) => p._id || p) || [],
   );
+
+  // Logic to handle "Select All"
+  const isAllSelected =
+    provinces.length > 0 && selectedProvinces.length === provinces.length;
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedProvinces(provinces.map((p) => p._id));
+    } else {
+      setSelectedProvinces([]);
+    }
+  };
 
   const toggleProvince = (id: string) => {
     setSelectedProvinces((prev) =>
@@ -201,8 +326,6 @@ function SectionFormDialog({
     e.preventDefault();
     setLoading(true);
     try {
-      // Pour l'ajout, on envoie { name, provinces: string[] }
-      // Pour l'update, adapter selon votre API (votre hook updateSection prend provinceId unique ou name)
       await onSubmit({ name, provinces: selectedProvinces });
       setOpen(false);
     } finally {
@@ -242,7 +365,24 @@ function SectionFormDialog({
           </div>
 
           <div className="space-y-3">
-            <Label>Provinces concernées</Label>
+            <div className="flex items-center justify-between">
+              <Label>Provinces concernées</Label>
+              {/* Select All Checkbox */}
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="select-all"
+                  checked={isAllSelected}
+                  onCheckedChange={(checked) => handleSelectAll(!!checked)}
+                />
+                <label
+                  htmlFor="select-all"
+                  className="text-xs font-medium cursor-pointer"
+                >
+                  Tout sélectionner
+                </label>
+              </div>
+            </div>
+
             <ScrollArea className="h-48 w-full rounded-md border p-4">
               <div className="space-y-4">
                 {provinces.map((province) => (
@@ -257,7 +397,7 @@ function SectionFormDialog({
                     />
                     <label
                       htmlFor={province._id}
-                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
                     >
                       {province.name}
                     </label>
@@ -266,7 +406,7 @@ function SectionFormDialog({
               </div>
             </ScrollArea>
             <p className="text-[10px] text-muted-foreground italic">
-              Sélectionnez les provinces où cette section est disponible.
+              {selectedProvinces.length} province(s) sélectionnée(s).
             </p>
           </div>
 
@@ -289,7 +429,7 @@ function SectionFormDialog({
   );
 }
 
-// --- Suppression avec confirmation ---
+// --- Delete Dialog Component ---
 function DeleteSectionDialog({
   section,
   onDelete,
@@ -318,8 +458,7 @@ function DeleteSectionDialog({
           <AlertDialogTitle>Supprimer la section ?</AlertDialogTitle>
           <AlertDialogDescription>
             Êtes-vous sûr de vouloir supprimer la section{" "}
-            <strong>{section.name}</strong> ? Cette action est irréversible et
-            pourrait affecter les cours liés.
+            <strong>{section.name}</strong> ?
             <br />
             <br />
             Saisissez pour confirmer :{" "}
