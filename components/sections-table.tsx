@@ -56,7 +56,6 @@ export interface Section {
 }
 
 // --- Internal Hook: useSections ---
-// Logic moved here to avoid "conflict with local declaration" errors
 export function useSections() {
   const [sections, setSections] = useState<Section[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -327,6 +326,13 @@ function SectionFormDialog({
     setLoading(true);
     try {
       await onSubmit({ name, provinces: selectedProvinces });
+
+      // Clear inputs only if we are creating a new section
+      if (!section) {
+        setName("");
+        setSelectedProvinces([]);
+      }
+
       setOpen(false);
     } finally {
       setLoading(false);
