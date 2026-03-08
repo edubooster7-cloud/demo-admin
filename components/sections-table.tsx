@@ -40,7 +40,15 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, Trash2, Edit, Plus, LayoutGrid } from "lucide-react";
+import {
+  Loader2,
+  Trash2,
+  Edit,
+  Plus,
+  LayoutGrid,
+  Search,
+  XCircle,
+} from "lucide-react";
 
 // External Hooks
 import { useProvinces } from "@/hooks/use-province";
@@ -165,7 +173,17 @@ export function SectionsTable() {
     addSection,
     updateSection,
   } = useSections();
+
+  const [searchTerm, setSearchTerm] = useState("");
   const [loadingId, setLoadingId] = useState<string | null>(null);
+
+  // Filtered logic
+  const filteredSections = useMemo(() => {
+    if (!searchTerm.trim()) return sections;
+    return sections.filter((s) =>
+      s.name.toLowerCase().includes(searchTerm.toLowerCase()),
+    );
+  }, [sections, searchTerm]);
 
   if (isLoading) {
     return (
@@ -185,6 +203,7 @@ export function SectionsTable() {
 
   return (
     <div className="space-y-6">
+      {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-3">
         <div className="rounded-lg border bg-card p-4 shadow-sm">
           <p className="text-sm font-medium text-muted-foreground">
@@ -206,14 +225,28 @@ export function SectionsTable() {
         </div>
       </div>
 
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h2 className="text-xl font-semibold flex items-center gap-2">
           <LayoutGrid className="size-5" /> Liste des Sections
         </h2>
-        <SectionFormDialog onSubmit={addSection} />
+
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          {/* Search Bar */}
+          <div className="relative w-full md:w-64">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Rechercher une section..."
+              className="pl-9 h-9"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <SectionFormDialog onSubmit={addSection} />
+        </div>
       </div>
 
-      <div className="rounded-lg border bg-card shadow-sm">
+      <div className="rounded-lg border bg-card shadow-sm overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
@@ -224,17 +257,28 @@ export function SectionsTable() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sections.length === 0 ? (
+            {filteredSections.length === 0 ? (
               <TableRow>
                 <TableCell
                   colSpan={4}
-                  className="text-center py-8 text-muted-foreground"
+                  className="text-center py-12 text-muted-foreground"
                 >
-                  Aucune section trouvée
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <XCircle className="h-8 w-8 opacity-20" />
+                    <p>
+                      Aucune section trouvée{" "}
+                      {searchTerm && `pour "${searchTerm}"`}
+                    </p>
+                    {searchTerm && (
+                      <Button variant="link" onClick={() => setSearchTerm("")}>
+                        Effacer la recherche
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ) : (
-              sections.map((section) => (
+              filteredSections.map((section) => (
                 <TableRow key={section._id}>
                   <TableCell className="font-medium">{section.name}</TableCell>
                   <TableCell>
@@ -303,7 +347,6 @@ function SectionFormDialog({
     section?.provinces?.map((p: any) => p._id || p) || [],
   );
 
-  // Logic to handle "Select All"
   const isAllSelected =
     provinces.length > 0 && selectedProvinces.length === provinces.length;
 
@@ -326,13 +369,10 @@ function SectionFormDialog({
     setLoading(true);
     try {
       await onSubmit({ name, provinces: selectedProvinces });
-
-      // Clear inputs only if we are creating a new section
       if (!section) {
         setName("");
         setSelectedProvinces([]);
       }
-
       setOpen(false);
     } finally {
       setLoading(false);
@@ -347,12 +387,12 @@ function SectionFormDialog({
             <Edit className="h-4 w-4" />
           </Button>
         ) : (
-          <Button size="sm" className="gap-2">
+          <Button size="sm" className="gap-2 shrink-0">
             <Plus className="h-4 w-4" /> Nouvelle Section
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-106.25">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
             {section ? "Modifier la section" : "Créer une section"}
@@ -373,7 +413,6 @@ function SectionFormDialog({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <Label>Provinces concernées</Label>
-              {/* Select All Checkbox */}
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="select-all"

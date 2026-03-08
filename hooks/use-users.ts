@@ -33,14 +33,13 @@ export function useUsers() {
 
   const removeUser = async (userId: string) => {
     try {
-      const response = await api.delete(`/users/users/delete/${userId}`);
+      const response = await api.delete(`/users/admin/users/delete/${userId}`);
       if (response.data.success) {
         setUsers((prev) => prev.filter((u) => (u._id || u._id) !== userId));
         toast.success("Utilisateur supprimé");
       }
     } catch (err: any) {
-      const msg =
-        err.response?.data?.message || "Erreur lors de la suppression";
+      const msg = "Erreur lors de la suppression test";
       toast.error(msg);
       throw err;
     }

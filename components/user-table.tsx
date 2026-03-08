@@ -24,15 +24,25 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
-import { Loader2, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { Loader2, Trash2, Search, X } from "lucide-react"; // Added Search and X
+import { useState, useMemo } from "react"; // Added useMemo
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 
 export function UsersTable() {
-  const { users, isLoadingUsers, error, stats, restoreUser, toggleActive } =
-    useUsers();
+  const {
+    users,
+    isLoadingUsers,
+    error,
+    stats,
+    restoreUser,
+    toggleActive,
+    removeUser,
+  } = useUsers();
   const [loadingId, setLoadingId] = useState<string | null>(null);
+
+  // 1. Search State
+  const [searchQuery, setSearchQuery] = useState("");
 
   const handleToggleActive = async (userId: string) => {
     setLoadingId(userId);
@@ -42,6 +52,16 @@ export function UsersTable() {
       setLoadingId(null);
     }
   };
+
+  // 2. Filtering Logic
+  const filteredUsers = useMemo(() => {
+    return users.filter((user) => {
+      const searchLower = searchQuery.toLowerCase();
+      const emailMatch = user.email.toLowerCase().includes(searchLower);
+      const nameMatch = user.name?.toLowerCase().includes(searchLower);
+      return emailMatch || nameMatch;
+    });
+  }, [users, searchQuery]);
 
   if (isLoadingUsers) {
     return (
@@ -61,7 +81,7 @@ export function UsersTable() {
 
   return (
     <div className="space-y-6">
-      {/* Stats (inchangées) */}
+      {/* Stats */}
       <div className="grid gap-4 md:grid-cols-3">
         <div className="rounded-lg border bg-card p-4">
           <p className="text-sm font-medium text-muted-foreground">
@@ -83,6 +103,30 @@ export function UsersTable() {
         </div>
       </div>
 
+      {/* 3. Search Bar UI */}
+      <div className="flex items-center gap-4">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Rechercher par nom ou email..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 pr-9"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        <div className="text-sm text-muted-foreground">
+          {filteredUsers.length} résultat(s)
+        </div>
+      </div>
+
       <div className="rounded-lg border bg-card">
         <Table>
           <TableHeader>
@@ -95,14 +139,20 @@ export function UsersTable() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {users.length === 0 ? (
+            {/* 4. Use filteredUsers instead of users */}
+            {filteredUsers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8">
-                  Aucun utilisateur
+                <TableCell
+                  colSpan={5}
+                  className="text-center py-8 text-muted-foreground"
+                >
+                  {searchQuery
+                    ? "Aucun utilisateur ne correspond à votre recherche"
+                    : "Aucun utilisateur"}
                 </TableCell>
               </TableRow>
             ) : (
-              users.map((user) => (
+              filteredUsers.map((user) => (
                 <TableRow key={user._id}>
                   <TableCell className="font-medium">{user.email}</TableCell>
                   <TableCell>{user.name || "-"}</TableCell>
@@ -127,19 +177,28 @@ export function UsersTable() {
                       : "-"}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => restoreUser(user._id)}
-                      disabled={!user.isDeleted || loadingId === user._id}
-                      className="text-primary hover:bg-primary/10 disabled:opacity-40"
-                    >
-                      {loadingId === user._id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        "Restaurer"
-                      )}
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => restoreUser(user._id)}
+                        disabled={!user.isDeleted || loadingId === user._id}
+                        className="text-primary hover:bg-primary/10 disabled:opacity-40"
+                      >
+                        {loadingId === user._id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          "Restaurer"
+                        )}
+                      </Button>
+
+                      {/* Integrated the Delete sub-component */}
+                      <DeleteUserDialog
+                        user={user}
+                        onDelete={() => removeUser(user._id)}
+                        isLoading={loadingId === user._id}
+                      />
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -151,7 +210,7 @@ export function UsersTable() {
   );
 }
 
-// --- Sous-composant pour la suppression avec confirmation textuelle ---
+// --- Delete Dialog Component remains the same ---
 function DeleteUserDialog({
   user,
   onDelete,
@@ -209,7 +268,10 @@ function DeleteUserDialog({
             Annuler
           </AlertDialogCancel>
           <AlertDialogAction
-            onClick={onDelete}
+            onClick={async () => {
+              await onDelete();
+              setConfirmText("");
+            }}
             disabled={confirmText !== expectedText}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
           >
